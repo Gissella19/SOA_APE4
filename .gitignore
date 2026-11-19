@@ -1,0 +1,30 @@
+# Carpetas de compilacion y dependencias (PROHIBIDAS EN ENTREGABLE)
+**/target/
+**/bin/
+**/obj/
+**/node_modules/
+**/.venv/
+**/__pycache__/
+*.pyc
+
+# Archivos de configuracion con secretos reales
+**/.env
+!**/.env.example
+**/application-secrets.properties
+
+# Documentos y configuraciones locales
+*.docx
+~$*
+.agent/
+nginx.conf
+
+# Archivos comprimidos de partida y temporales
+*.zip
+*.z01
+*.z02
+*.tar.gz
+*.log
+.DS_Store
+Thumbs.db
+
+
