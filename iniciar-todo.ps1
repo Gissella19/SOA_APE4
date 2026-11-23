@@ -25,15 +25,12 @@ if (Test-PortOpen 3306) {
     Write-Host "[AVISO] MySQL (3306) no responde. Inicia XAMPP MySQL antes de continuar." -ForegroundColor Yellow
 }
 
-# 2. RabbitMQ (5672 / 15672)
+# 2. RabbitMQ (5672 / 15672) - Run in minimized window without stdin EOF redirect so Erlang stays alive
 if (-not (Test-PortOpen 5672)) {
-    Write-Host "[..] Iniciando RabbitMQ (5672 / 15672)..." -ForegroundColor Cyan
+    Write-Host "[..] Iniciando RabbitMQ nativo (5672 / 15672)..." -ForegroundColor Cyan
     $env:ERLANG_HOME = "C:\Users\Admin\scoop\apps\erlang\current"
     $env:RABBITMQ_SERVER = "C:\Users\Admin\scoop\apps\rabbitmq\current"
-    Start-Process -FilePath "$env:RABBITMQ_SERVER\sbin\rabbitmq-server.bat" `
-        -WindowStyle Minimized `
-        -RedirectStandardOutput "$LogDir\rabbitmq.out.log" `
-        -RedirectStandardError "$LogDir\rabbitmq.err.log"
+    Start-Process -FilePath "$env:RABBITMQ_SERVER\sbin\rabbitmq-server.bat" -WindowStyle Minimized
 } else {
     Write-Host "[OK] RabbitMQ ya esta activo en 5672" -ForegroundColor Green
 }
@@ -108,8 +105,13 @@ Start-Process -FilePath "cmd.exe" `
     -RedirectStandardOutput "$LogDir\react-5173.out.log" `
     -RedirectStandardError "$LogDir\react-5173.err.log"
 
-Write-Host "`nEsperando a que respondan todos los puertos (12 segundos)..." -ForegroundColor Yellow
-Start-Sleep -Seconds 12
+Write-Host "`nEsperando a que respondan todos los puertos (max 35 segundos)..." -ForegroundColor Yellow
+$PuertosEsperados = @(5672, 15672, 8090, 8080, 8082, 8002, 8081, 5174)
+for ($i = 0; $i -lt 35; $i++) {
+    $faltantes = @($PuertosEsperados | Where-Object { -not (Test-PortOpen $_) })
+    if ($faltantes.Count -eq 0) { break }
+    Start-Sleep -Seconds 1
+}
 
 $Servicios = @(
     @{Nombre="MySQL"; Puerto=3306; Url="127.0.0.1:3306"},
