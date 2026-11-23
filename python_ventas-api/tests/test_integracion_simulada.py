@@ -60,15 +60,14 @@ def sistema(monkeypatch):
             r['estado']='CONFIRMADA';estado['vehiculos'][r['vehiculoId']]='VENDIDO'
             return httpx.Response(200,json=r)
         raise AssertionError(f'Ruta inesperada: {method} {route}')
-    def avisar(url,**kw):
-        assert kw['headers']['X-Notification-Key']=='clave_prueba_notif_con_32_caracteres_123'
-        assert url.endswith('/api/notificaciones')
-        if not estado['notificaciones_activas']:raise httpx.ConnectError('apagado')
-        estado['avisos'].append(kw['json'])
-        return httpx.Response(201,json={'estado':'ENVIADA'})
+    def avisar(evento):
+        if not estado['notificaciones_activas']:
+            return False
+        estado['avisos'].append(evento)
+        return True
     monkeypatch.setattr(httpx,'get',identidad)
     monkeypatch.setattr(httpx,'request',java)
-    monkeypatch.setattr(httpx,'post',avisar)
+    monkeypatch.setattr(svc,'publicar_evento_venta',avisar)
     return TestClient(app),estado
 
 

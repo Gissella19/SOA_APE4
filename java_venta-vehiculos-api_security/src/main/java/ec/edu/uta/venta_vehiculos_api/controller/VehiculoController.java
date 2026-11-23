@@ -11,6 +11,7 @@ import java.util.*;
 import jakarta.validation.Valid;
 
 // Permite personalizar las respuestas HTTP.
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 
 // Importa las anotaciones REST de Spring Boot.
@@ -38,6 +39,10 @@ public class VehiculoController {
     // Cliente encargado de solicitar las notificaciones.
     private final NotificacionClient avisos;
 
+    // Puerto activo de la instancia.
+    @Value("${server.port:8080}")
+    private int serverPort;
+
     // Constructor que recibe las dependencias desde Spring.
     public VehiculoController(
             VehiculoService service,
@@ -50,15 +55,27 @@ public class VehiculoController {
         this.avisos = avisos;
     }
 
+    // Atiende GET /api/vehiculos/instancia para verificar balanceo entre nodos A y B.
+    @GetMapping("/instancia")
+    public Map<String, Object> instancia() {
+        return Map.of(
+                "status", "UP",
+                "port", serverPort,
+                "instancia", serverPort == 8080 ? "A" : "B"
+        );
+    }
+
     // Atiende GET /api/vehiculos.
     @GetMapping
     public List<VehiculoResponse> listar(
 
             // Recibe el parámetro opcional marca.
-            @RequestParam(required = false) String marca) {
+            @RequestParam(required = false) String marca,
+            // Recibe el parámetro opcional estado.
+            @RequestParam(required = false) String estado) {
 
         // Solicita al Service listar o filtrar vehículos.
-        return service.listar(marca);
+        return service.listar(marca, estado);
     }
 
     // Atiende GET /api/vehiculos/{id}.

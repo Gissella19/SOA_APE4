@@ -37,3 +37,10 @@ if min(len(SERVICE_KEY), len(NOTIF_KEY)) < 32:
 if SERVICE_KEY.startswith("COLOCA_") or NOTIF_KEY.startswith("COLOCA_"):
     # Impide continuar si faltan credenciales de integración.
     raise RuntimeError("Reemplaza las claves de ejemplo en el archivo .env")
+
+# Configuración del broker RabbitMQ con valores predeterminados locales.
+RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "127.0.0.1")
+RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
+RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
+RABBITMQ_PASSWORD = os.getenv("RABBITMQ_PASSWORD", "guest")
+RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE", "notificaciones.ventas")

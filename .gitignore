@@ -14,9 +14,10 @@
 
 # Documentos y configuraciones locales
 *.docx
+*.ogg
 ~$*
 .agent/
-nginx.conf
+logs/
 
 # Archivos comprimidos de partida y temporales
 *.zip

@@ -34,6 +34,12 @@ public interface VehiculoRepository
     // IgnoreCase permite buscar sin distinguir mayúsculas y minúsculas.
     List<Vehiculo> findByMarcaContainingIgnoreCase(String marca);
 
+    // Busca vehículos filtrando por su estado exacto sin distinguir mayúsculas/minúsculas.
+    List<Vehiculo> findByEstadoIgnoreCase(String estado);
+
+    // Busca vehículos filtrando simultáneamente por marca y estado.
+    List<Vehiculo> findByMarcaContainingIgnoreCaseAndEstadoIgnoreCase(String marca, String estado);
+
     // Bloquea el registro para impedir cambios simultáneos
     // incompatibles mientras dure la transacción.
     @Lock(LockModeType.PESSIMISTIC_WRITE)

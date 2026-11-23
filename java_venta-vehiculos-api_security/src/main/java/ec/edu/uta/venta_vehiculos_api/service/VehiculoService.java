@@ -56,15 +56,27 @@ public class VehiculoService {
     // Indica que esta operación solamente consulta información.
     @Transactional(readOnly = true)
     public List<VehiculoResponse> listar(String marca) {
+        return listar(marca, null);
+    }
 
-        // Si no recibe marca, consulta todos los vehículos.
-        // Si recibe marca, busca los que coincidan con el texto.
-        var lista = marca == null
-                ? repo.findAll()
-                : repo.findByMarcaContainingIgnoreCase(marca);
+    // Lista vehículos sin filtro, filtrados por marca, por estado o por ambos.
+    @Transactional(readOnly = true)
+    public List<VehiculoResponse> listar(String marca, String estado) {
+        String marcaLimpia = (marca != null && !marca.trim().isEmpty()) ? marca.trim() : null;
+        String estadoLimpio = (estado != null && !estado.trim().isEmpty()) ? estado.trim().toUpperCase(Locale.ROOT) : null;
+
+        List<Vehiculo> lista;
+        if (marcaLimpia != null && estadoLimpio != null) {
+            lista = repo.findByMarcaContainingIgnoreCaseAndEstadoIgnoreCase(marcaLimpia, estadoLimpio);
+        } else if (marcaLimpia != null) {
+            lista = repo.findByMarcaContainingIgnoreCase(marcaLimpia);
+        } else if (estadoLimpio != null) {
+            lista = repo.findByEstadoIgnoreCase(estadoLimpio);
+        } else {
+            lista = repo.findAll();
+        }
 
         // Convierte cada entidad Vehiculo en un DTO de respuesta.
-        // Devuelve una lista con los resultados.
         return lista.stream()
                 .map(VehiculoResponse::de)
                 .toList();
@@ -116,14 +128,14 @@ public class VehiculoService {
 
     // Modifica únicamente el precio mediante PATCH.
     public VehiculoResponse precio(int id, Map<String, Object> d) {
+        return parchear(id, d);
+    }
 
-        // Comprueba que el JSON tenga únicamente el campo precio.
-        // También exige que su valor sea numérico.
-        if (d.size() != 1 ||
-                !d.containsKey("precio") ||
-                !(d.get("precio") instanceof Number)) {
+    // Modifica únicamente el precio mediante PATCH normalizando antes de validar.
+    public VehiculoResponse parchear(int id, Map<String, Object> d) {
 
-            // Genera un error 422 si los datos no son válidos.
+        // Comprueba que el JSON tenga únicamente el campo precio y no sea nulo.
+        if (d == null || d.size() != 1 || !d.containsKey("precio") || d.get("precio") == null) {
             throw new ApiError(
                     422,
                     "PATCH_INVALIDO",
@@ -131,17 +143,20 @@ public class VehiculoService {
             );
         }
 
-        // Variable donde se almacenará el nuevo precio.
+        Object valorPrecio = d.get("precio");
+        String textoPrecio = valorPrecio instanceof String s ? s.trim() : valorPrecio.toString().trim();
+        if (!(valorPrecio instanceof Number) && !(valorPrecio instanceof String)) {
+            throw new ApiError(
+                    422,
+                    "PATCH_INVALIDO",
+                    "PATCH admite únicamente precio numérico y no nulo"
+            );
+        }
+
         BigDecimal precio;
-
         try {
-
-            // Convierte el valor recibido a BigDecimal.
-            precio = new BigDecimal(d.get("precio").toString());
-
+            precio = new BigDecimal(textoPrecio);
         } catch (NumberFormatException e) {
-
-            // Genera un error si el precio no puede convertirse.
             throw new ApiError(
                     422,
                     "PRECIO_INVALIDO",
@@ -149,15 +164,9 @@ public class VehiculoService {
             );
         }
 
-        // signum() comprueba que el precio sea positivo.
-        // scale() comprueba que no tenga más de 2 decimales.
-        // compareTo() comprueba el valor máximo permitido.
         if (precio.signum() <= 0 ||
                 precio.scale() > 2 ||
-                precio.compareTo(
-                    new BigDecimal("9999999999.99")) > 0) {
-
-            // Rechaza precios fuera del rango permitido.
+                precio.compareTo(new BigDecimal("9999999999.99")) > 0) {
             throw new ApiError(
                     422,
                     "PRECIO_INVALIDO",
@@ -234,15 +243,45 @@ public class VehiculoService {
         );
     }
 
-    // Copia los datos del DTO a la entidad Vehiculo.
+    // Copia los datos del DTO a la entidad Vehiculo normalizando antes de validar.
     private void copiar(Vehiculo v, VehiculoRequest d) {
 
-        // Comprueba que el año sea desde 1900 hasta
-        // el año siguiente al actual.
-        if (d.anio() < 1900 ||
+        String marca = d.marca() != null ? d.marca().trim() : "";
+        String modelo = d.modelo() != null ? d.modelo().trim() : "";
+        String placa = d.placa() != null ? d.placa().trim().toUpperCase(Locale.ROOT) : "";
+        String chasis = d.chasis() != null ? d.chasis().trim().toUpperCase(Locale.ROOT) : "";
+        String color = d.color() != null ? d.color().trim() : null;
+
+        if (marca.isEmpty() || modelo.isEmpty()) {
+            throw new ApiError(
+                    422,
+                    "DATOS_INVALIDOS",
+                    "Marca y modelo son obligatorios"
+            );
+        }
+
+        // Valida formato de placa (ej. ABC-1234, ABC-123 o ABC1234).
+        if (!placa.matches("^[A-Z]{3}-?[0-9]{3,4}$")) {
+            throw new ApiError(
+                    422,
+                    "PLACA_INVALIDA",
+                    "Formato de placa inválido (ejemplo: ABC-1234)"
+            );
+        }
+
+        // Comprueba que el chasis tenga exactamente 17 caracteres alfanuméricos.
+        if (!chasis.matches("^[A-Z0-9]{17}$")) {
+            throw new ApiError(
+                    422,
+                    "CHASIS_INVALIDO",
+                    "Chasis debe contener exactamente 17 caracteres alfanuméricos"
+            );
+        }
+
+        // Comprueba que el año sea desde 1900 hasta el año siguiente al actual.
+        if (d.anio() == null || d.anio() < 1900 ||
                 d.anio() > Year.now().getValue() + 1) {
 
-            // Genera un error si el año está fuera de rango.
             throw new ApiError(
                     422,
                     "ANIO_INVALIDO",
@@ -250,40 +289,13 @@ public class VehiculoService {
             );
         }
 
-        // Asigna la marca eliminando espacios de los extremos.
-        v.setMarca(d.marca().trim());
-
-        // Asigna el modelo eliminando espacios de los extremos.
-        v.setModelo(d.modelo().trim());
-
-        // Convierte la placa a mayúsculas y elimina espacios.
-        v.setPlaca(
-                d.placa().trim().toUpperCase(Locale.ROOT)
-        );
-
-        // Convierte el chasis a mayúsculas y elimina espacios.
-        v.setChasis(
-                d.chasis().trim().toUpperCase(Locale.ROOT)
-        );
-
-        // Comprueba que el chasis tenga exactamente 17 caracteres.
-        if (v.getChasis().length() != 17) {
-
-            // Genera un error si el chasis no cumple la longitud.
-            throw new ApiError(
-                    422,
-                    "CHASIS_INVALIDO",
-                    "Chasis de 17 caracteres"
-            );
-        }
-
-        // Asigna el año del vehículo.
+        // Asigna los campos ya normalizados y validados.
+        v.setMarca(marca);
+        v.setModelo(modelo);
+        v.setPlaca(placa);
+        v.setChasis(chasis);
         v.setAnio(d.anio());
-
-        // Asigna el color recibido.
-        v.setColor(d.color());
-
-        // Asigna el precio recibido.
+        v.setColor(color);
         v.setPrecio(d.precio());
     }
 

@@ -1,11 +1,19 @@
 """Entrada de la API FastAPI; documentación OpenAPI y health."""
 # Publica endpoints web y valida solicitudes.
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 # Importa el componente local correspondiente a esta responsabilidad.
 from app.errors import instalar
 from app.routers.ventas import router
 # Crea la aplicación web y genera /docs automáticamente.
 app = FastAPI(title="API de ventas de vehículos", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["Location"],
+)
 # Registra respuestas uniformes para errores HTTP.
 instalar(app)
 # Publica las rutas REST del módulo de ventas.

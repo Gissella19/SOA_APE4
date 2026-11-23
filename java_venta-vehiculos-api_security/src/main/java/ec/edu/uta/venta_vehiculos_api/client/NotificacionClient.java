@@ -1,6 +1,8 @@
 package ec.edu.uta.venta_vehiculos_api.client;
 
 import java.time.Duration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -10,6 +12,7 @@ import ec.edu.uta.venta_vehiculos_api.dto.NotificacionRequest;
 // Configura el comportamiento de Spring o el mapeo ORM.
 @Component
 public class NotificacionClient {
+ private static final Logger log = LoggerFactory.getLogger(NotificacionClient.class);
  private final RestClient client;
  private final String destino;
  // Declara un método o constructor público.
@@ -34,7 +37,7 @@ public class NotificacionClient {
     .body(new NotificacionRequest(id,destino,tipo,mensaje))
     .retrieve().toBodilessEntity();
   } catch (RestClientException e) {
-   System.err.println("Notificación no enviada para vehículo "+id);
+   log.warn("Notificacion no enviada para vehiculo {}", id);
   }
-}
+ }
 }

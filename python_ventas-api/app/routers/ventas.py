@@ -3,15 +3,37 @@
 from typing import Annotated
 # Publica endpoints web y valida solicitudes.
 from fastapi import APIRouter, Depends, Header, Response
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 # Importa el componente local correspondiente a esta responsabilidad.
 from app.db import SessionLocal
 from app.models import Venta, Comprador
+from app.repositories.venta_repository import VentaRepository
 from app.schemas import CrearVenta, CrearComprador
-from app.security import identidad, vendedor, propietario
+from app.security import identidad, vendedor
 from app.errors import ApiError
 from app.services import venta_service as service
 # Crea el agrupador de rutas HTTP con prefijo /api.
 router = APIRouter(prefix="/api")
+
+
+# Expone GET /api/compradores para listar todos los compradores registrados.
+@router.get("/compradores")
+def listar_compradores(u=Depends(identidad)):
+    with SessionLocal() as db:
+        compradores = db.scalars(
+            select(Comprador).order_by(Comprador.id.desc())
+        ).all()
+        return [
+            {
+                "id": c.id,
+                "documento": c.documento,
+                "nombre": c.nombre,
+                "correo": c.correo,
+                "usuario": c.usuario,
+            }
+            for c in compradores
+        ]
 
 
 # Expone POST /api/compradores; cuando crea devuelve HTTP 201.
@@ -20,14 +42,45 @@ router = APIRouter(prefix="/api")
 def crear_comprador(d: CrearComprador, u=Depends(identidad)):
     # Comprueba permisos de OPERADOR o ADMIN.
     vendedor(u)
+    documento = d.documento.strip()
+    nombre = d.nombre.strip()
+    correo = d.correo.strip()
     # Abre una transacción que confirma automáticamente al concluir.
-    with SessionLocal.begin() as db:
-        # Crea el comprador y guarda el propietario real autenticado.
-        c = Comprador(usuario=u["usuario"], **d.model_dump())
-        # Registra la entidad y ejecuta el INSERT para obtener el ID.
-        db.add(c); db.flush()
-        # Envía al cliente el nuevo comprador sin exponer campos internos.
-        return {"id": c.id, "nombre": c.nombre, "correo": c.correo}
+    try:
+        with SessionLocal.begin() as db:
+            # Crea el comprador con datos normalizados y guarda el usuario autenticado.
+            c = Comprador(
+                usuario=u["usuario"],
+                documento=documento,
+                nombre=nombre,
+                correo=correo,
+            )
+            # Registra la entidad y ejecuta el INSERT para obtener el ID.
+            db.add(c)
+            db.flush()
+            return {
+                "id": c.id,
+                "documento": c.documento,
+                "nombre": c.nombre,
+                "correo": c.correo,
+                "usuario": c.usuario,
+            }
+    except IntegrityError:
+        raise ApiError(
+            409,
+            "COMPRADOR_DUPLICADO",
+            "Ya existe un comprador registrado con ese documento para este usuario",
+        )
+
+
+# Expone GET /api/ventas para consultar el listado general de ventas.
+@router.get("/ventas")
+def listar_ventas(u=Depends(identidad)):
+    with SessionLocal() as db:
+        ventas = db.scalars(
+            select(Venta).order_by(Venta.id.desc())
+        ).all()
+        return [service.salida(v) for v in ventas]
 
 
 # Expone POST /api/ventas; requiere JWT y Idempotency-Key.
@@ -52,7 +105,24 @@ def crear(d: CrearVenta, response: Response,
     return resultado
 
 
-# Expone GET /api/ventas/{id} para consultar la operación.
+# Expone POST /api/ventas/reintentar-notificaciones para reenviar eventos pendientes a RabbitMQ.
+@router.post("/ventas/reintentar-notificaciones")
+def reintentar_notificaciones(u=Depends(identidad)):
+    vendedor(u)
+    with SessionLocal() as db:
+        ids = VentaRepository(db).pendientes()
+    for venta_id in ids:
+        service.procesar(venta_id)
+        service.notificar(venta_id)
+    with SessionLocal() as db:
+        restantes = VentaRepository(db).pendientes()
+    return {
+        "revisadas": len(ids),
+        "pendientesRestantes": len(restantes),
+    }
+
+
+# Expone GET /api/ventas/{id} para consultar la operación por cualquier rol autenticado.
 @router.get("/ventas/{id}")
 # Obtiene un identificador y usuario autenticado.
 def obtener(id: int, u=Depends(identidad)):
@@ -64,7 +134,5 @@ def obtener(id: int, u=Depends(identidad)):
         if v is None:
             # Responde 404 en vez de un error genérico.
             raise ApiError(404, "VENTA_NO_EXISTE", "Venta inexistente")
-        # Restringe la consulta al dueño o administrador.
-        propietario(u, v.usuario)
         # Devuelve el mismo formato JSON que POST.
         return service.salida(v)

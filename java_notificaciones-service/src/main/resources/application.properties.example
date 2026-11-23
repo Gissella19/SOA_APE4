@@ -1,0 +1,23 @@
+spring.application.name=notificaciones-service
+server.port=8081
+server.address=127.0.0.1
+
+# Conexión MySQL local (plantilla sin secretos)
+spring.datasource.url=jdbc:mysql://127.0.0.1:3306/venta_vehiculos?useSSL=false&serverTimezone=UTC
+spring.datasource.username=root
+spring.datasource.password=
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.open-in-view=false
+spring.jpa.show-sql=false
+spring.jpa.database-platform=org.hibernate.dialect.MariaDBDialect
+
+# Configuración RabbitMQ
+spring.rabbitmq.host=127.0.0.1
+spring.rabbitmq.port=5672
+spring.rabbitmq.username=guest
+spring.rabbitmq.password=COLOCA_AQUI_PASSWORD_RABBITMQ
+spring.rabbitmq.listener.simple.missing-queues-fatal=false
+app.rabbitmq.queue=notificaciones.ventas
+
+# Clave X-Notification-Key (mínimo 32 caracteres)
+app.notificacion-key=COLOCA_AQUI_NOTIFICACIONES_KEY_DE_32_CARACTERES

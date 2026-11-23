@@ -3,6 +3,7 @@ package ec.edu.uta.venta_vehiculos_api.dto;
 
 // Permite manejar precios con precisión decimal.
 import java.math.BigDecimal;
+import java.util.Locale;
 
 // Importa las anotaciones para validar los datos recibidos.
 import jakarta.validation.constraints.*;
@@ -35,4 +36,13 @@ public record VehiculoRequest(
     @NotNull @Positive @Digits(integer=10, fraction=2)
     BigDecimal precio
 
-) {} // Finaliza la definición del DTO.
+) {
+    // Normaliza los campos de texto antes de ejecutar las anotaciones de Bean Validation.
+    public VehiculoRequest {
+        marca = marca != null ? marca.trim() : null;
+        modelo = modelo != null ? modelo.trim() : null;
+        placa = placa != null ? placa.trim().toUpperCase(Locale.ROOT) : null;
+        chasis = chasis != null ? chasis.trim().toUpperCase(Locale.ROOT) : null;
+        color = color != null ? color.trim() : null;
+    }
+} // Finaliza la definición del DTO.

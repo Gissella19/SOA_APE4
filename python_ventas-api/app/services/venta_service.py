@@ -3,12 +3,12 @@
 import hashlib
 # Interpreta o genera cuerpos JSON.
 import json
+# Maneja fechas en UTC para mensajes de eventos.
+from datetime import timezone
 # Genera identificadores únicos.
 from uuid import uuid4
 # Evita errores de redondeo en importes.
 from decimal import Decimal
-# Realiza solicitudes HTTP a las APIs Java.
-import httpx
 # Ofrece ORM, consultas y transacciones SQL.
 from sqlalchemy.exc import IntegrityError
 # Importa el componente local correspondiente a esta responsabilidad.
@@ -17,10 +17,9 @@ from app.models import Venta, Comprador
 # Importa las consultas SQL de ventas desde la capa Repository.
 from app.repositories.venta_repository import VentaRepository
 from app.clients.vehiculos_client import VehiculosClient, FalloRemoto
+from app.clients.rabbitmq_publisher import publicar_evento_venta
 # Importa el componente local correspondiente a esta responsabilidad.
-from app.config import NOTIF_URL, NOTIF_KEY
 from app.errors import ApiError
-from app.security import propietario
 # Prepara el cliente HTTP de reservas de Java.
 remote = VehiculosClient()
 
@@ -31,6 +30,10 @@ def salida(v):
     return {"id": v.id, "operacionId": v.operacion_id,
             # Agrega IDs de vehículo y comprador referenciados.
             "vehiculoId": v.vehiculo_id, "compradorId": v.comprador_id,
+            # Datos descriptivos del comprador y usuario que registró la venta.
+            "compradorNombre": v.comprador.nombre if v.comprador else None,
+            "compradorDocumento": v.comprador.documento if v.comprador else None,
+            "usuario": v.usuario,
             # Usa el precio establecido por Java; no por el cliente.
             "precioAcordado": str(v.precio_acordado)
                 # Si Java aún no respondió, devuelve null para el precio.
@@ -67,8 +70,6 @@ def crear(datos, clave, usuario):
             if comprador is None:
                 # Responde con HTTP 404 para el comprador no registrado.
                 raise ApiError(404, "COMPRADOR_NO_EXISTE", "Comprador inexistente")
-            # Impide usar un comprador ajeno, salvo que sea ADMIN.
-            propietario(usuario, comprador.usuario)
             # Construye la venta PENDIENTE, con UUID de operación único.
             v = Venta(operacion_id=str(uuid4()), usuario=usuario["usuario"],
                       # Asocia IDs y deja el precio pendiente de Java.
@@ -196,32 +197,28 @@ def procesar(id):
             v.error_detalle = "Pendiente de consultar y conciliar con Java"
 
 
-# Publica un aviso de venta exitosa al servicio Java receptor.
+# Publica un evento de venta confirmada en la cola durable de RabbitMQ.
 def notificar(id):
     # Abre transacción que hace commit automático si no hay excepción.
     with SessionLocal.begin() as db:
         # Obtiene la venta con bloqueo SQL para evitar procesamiento concurrente.
         v = VentaRepository(db).bloquear(id)
-        # Si no existe, preparará una nueva operación.
+        # Solo notifica si existe, está COMPLETADA y aún no fue ENVIADA.
         if v is None or v.estado != "COMPLETADA" or v.notificacion == "ENVIADA":
-            # Finaliza inmediatamente porque ya no hay trabajo pendiente.
             return
-        # Empieza una sección controlada para recuperar los errores esperados.
-        try:
-            # Hace un POST HTTP al receptor de notificaciones.
-            r = httpx.post(NOTIF_URL + "/api/notificaciones", timeout=3,
-                # Envía la clave compartida; debe coincidir con el filtro Java.
-                headers={"X-Notification-Key": NOTIF_KEY}, json={
-                    # Agrega IDs de vehículo y comprador referenciados.
-                    "vehiculoId": v.vehiculo_id, "tipo": "VENTA",
-                    # Usa el correo del comprador de esta venta.
-                    "destinatario": v.comprador.correo,
-                    # Construye un mensaje rastreable por ID y UUID.
-                    "mensaje": f"Venta {v.id} operación {v.operacion_id} completada",
-                })
-            # Marca como ENVIADA solo ante HTTP exitoso 2xx.
-            v.notificacion = "ENVIADA" if 200 <= r.status_code < 300 else "PENDIENTE"
-        # Si hay un problema de red, conserva la notificación pendiente.
-        except httpx.RequestError:
-            # Permite reintento posterior del worker.
-            v.notificacion = "PENDIENTE"
+        payload = {
+            "eventoId": str(v.operacion_id),
+            "tipo": "VENTA_CONFIRMADA",
+            "ventaId": v.id,
+            "operacionId": v.operacion_id,
+            "vehiculoId": v.vehiculo_id,
+            "compradorId": v.comprador_id,
+            "compradorNombre": v.comprador.nombre if v.comprador else "",
+            "destinatario": v.comprador.correo if v.comprador else "",
+            "precioAcordado": str(v.precio_acordado),
+            "moneda": v.moneda or "USD",
+            "mensaje": f"Venta #{v.id} confirmada - Vehiculo ID {v.vehiculo_id}",
+            "fecha": v.fecha.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+        enviado = publicar_evento_venta(payload)
+        v.notificacion = "ENVIADA" if enviado else "PENDIENTE"
