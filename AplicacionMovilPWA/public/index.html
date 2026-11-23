@@ -4,11 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#103b56" />
-    <meta name="description" content="Consulta móvil de vehículos a través de una API REST con autenticación JWT." />
+    <meta name="description" content="Aplicación Móvil PWA para autenticación OAuth2, consulta y registro exclusivo de ventas de vehículos vía NGINX." />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <title>Vehículos Móvil · PWA</title>
+    <title>Ventas y Vehículos Móvil · PWA (APE 04)</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
@@ -19,46 +19,154 @@
     <div class="app">
       <header class="encabezado">
         <div class="logo" aria-hidden="true">🚙</div>
-        <div>
-          <p class="eyebrow">APLICACIÓN MÓVIL · PWA</p>
-          <h1>Consulta de vehículos</h1>
-          <p class="subtitulo">Cliente de la API Java Spring Boot</p>
+        <div class="encabezado-texto">
+          <p class="eyebrow">APLICACIÓN MÓVIL · PWA · GATEWAY NGINX (8090)</p>
+          <h1>Registro Exclusivo de Ventas</h1>
+          <p class="subtitulo">Autenticación OAuth2, Idempotencia y Publicación Asíncrona a RabbitMQ</p>
         </div>
       </header>
 
+      <div id="tarjetaIdentidad" class="identidad-card sin-sesion" role="region" aria-label="Estado de sesión activa">
+        <div class="identidad-fila">
+          <div>
+            <span class="identidad-etiqueta">USUARIO LOGUEADO (GET /api/identidad)</span>
+            <strong id="usuarioActivo" class="identidad-valor">Sin sesión autenticada</strong>
+          </div>
+          <span id="rolActivo" class="badge-rol">SIN ROL</span>
+        </div>
+      </div>
+
       <main>
+        <!-- SECCIÓN 01: LOGIN Y TOKEN JWT -->
         <section class="panel" aria-labelledby="titulo-acceso">
           <div class="seccion-cabecera">
             <span class="paso">01</span>
-            <h2 id="titulo-acceso">Acceso con JWT</h2>
+            <h2 id="titulo-acceso">Inicio de Sesión y Token JWT</h2>
           </div>
-          <p class="ayuda">Se utiliza un token obtenido mediante el servicio de autenticación.</p>
+          <p class="ayuda">
+            Obtenga un token mediante <code>POST /oauth/token</code> o seleccione un perfil rápido para demostrar permisos por rol en vivo.
+          </p>
+
+          <form id="formLogin" novalidate>
+            <div class="grilla-dos">
+              <div>
+                <label for="loginUsername">Usuario</label>
+                <input id="loginUsername" type="text" value="usuario_operador" autocomplete="username" />
+              </div>
+              <div>
+                <label for="loginPassword">Contraseña</label>
+                <input id="loginPassword" type="password" value="cambiar-contrasena-aula-2026" autocomplete="current-password" />
+              </div>
+            </div>
+
+            <div class="acciones">
+              <button id="btnLogin" class="boton-primario" type="submit">Iniciar Sesión (POST /oauth/token)</button>
+            </div>
+
+            <div class="presets-barra">
+              <span class="presets-titulo">Perfiles rápidos:</span>
+              <button type="button" class="boton-chip" data-user="usuario_operador">Operador (Ventas)</button>
+              <button type="button" class="boton-chip" data-user="usuario_admin">Admin (Total)</button>
+              <button type="button" class="boton-chip" data-user="usuario_consulta">Consulta (403 en Ventas)</button>
+            </div>
+          </form>
+
+          <hr class="divisor" />
+
           <form id="formulario" novalidate>
-            <label for="jwt">Token de usuario</label>
+            <label for="jwt">Token JWT en memoria (Authorization: Bearer)</label>
             <div class="fila-token">
-              <input id="jwt" type="password" placeholder="Pegar JWT de Postman" autocapitalize="none" autocomplete="off" spellcheck="false" />
+              <input id="jwt" type="password" placeholder="Token JWT emitido por /oauth/token" autocapitalize="none" autocomplete="off" spellcheck="false" />
               <button id="alternarToken" type="button" class="boton-secundario" aria-label="Mostrar token" aria-pressed="false">Mostrar</button>
             </div>
             <div class="acciones">
-              <button id="consultar" class="boton-primario" type="submit">Consultar vehículos</button>
-              <button id="borrar" class="boton-discreto" type="button">Borrar token</button>
+              <button id="consultar" class="boton-secundario" type="submit">Sincronizar Catálogos (GET)</button>
+              <button id="btnVerificarIdentidad" class="boton-secundario" type="button">Verificar Identidad</button>
+              <button id="borrar" class="boton-discreto" type="button">Cerrar Sesión</button>
             </div>
           </form>
-          <div id="mensaje" class="mensaje neutro" role="status" aria-live="polite">Listo para consultar.</div>
-          <p class="seguridad">El token permanece en memoria; no se almacena en el dispositivo.</p>
+
+          <div id="mensaje" class="mensaje neutro" role="status" aria-live="polite">Listo para iniciar sesión.</div>
+          <p class="seguridad">Arquitectura Stateless: El JWT permanece en memoria de la sesión actual y viaja en cada petición HTTP.</p>
         </section>
 
+        <!-- SECCIÓN 02: REGISTRO EXCLUSIVO DE VENTAS -->
+        <section class="panel panel-destacado" aria-labelledby="titulo-venta">
+          <div class="seccion-cabecera resultados">
+            <div class="titulo-bloque">
+              <span class="paso">02</span>
+              <h2 id="titulo-venta">Registrar Venta (Exclusivo PWA)</h2>
+            </div>
+            <span class="badge-exclusivo">POST /api/ventas</span>
+          </div>
+          <p class="ayuda">
+            Seleccione un vehículo disponible y un comprador registrado. Incluye cabecera obligatoria <code>Idempotency-Key</code> para demostrar reintentos seguros (P10) y detección de conflicto HTTP 409 (P11).
+          </p>
+
+          <form id="formVenta" novalidate>
+            <label for="selectVehiculo">Vehículo (GET /api/vehiculos)</label>
+            <select id="selectVehiculo">
+              <option value="">-- Inicie sesión o sincronice catálogos --</option>
+            </select>
+
+            <label for="selectComprador">Comprador (GET /api/compradores)</label>
+            <select id="selectComprador">
+              <option value="">-- Inicie sesión o sincronice catálogos --</option>
+            </select>
+
+            <label for="idempotencyKey">Cabecera HTTP Idempotency-Key</label>
+            <div class="fila-token">
+              <input id="idempotencyKey" type="text" spellcheck="false" autocomplete="off" />
+              <button id="btnNuevaClave" type="button" class="boton-secundario">Nueva Clave UUID</button>
+            </div>
+            <p class="seguridad">
+              Para demostrar <strong>P10 (Reintento idempotente)</strong>: envíe dos veces con la misma clave y los mismos datos (devuelve HTTP 200 sin duplicar). Para <strong>P11 (Conflicto 409)</strong>: conserve la misma clave pero cambie el vehículo o comprador.
+            </p>
+
+            <div class="acciones">
+              <button id="btnRegistrarVenta" class="boton-primario" type="submit">Registrar Venta (POST /api/ventas)</button>
+              <button id="btnRefrescarCatalogos" class="boton-secundario" type="button">Actualizar Catálogos</button>
+            </div>
+          </form>
+
+          <div id="resultadoVenta" class="resultado-venta oculto" aria-live="polite"></div>
+        </section>
+
+        <!-- SECCIÓN 03: CONSULTA DE VENTA POR ID Y RECIENTES -->
+        <section class="panel" aria-labelledby="titulo-consulta-venta">
+          <div class="seccion-cabecera resultados">
+            <div class="titulo-bloque">
+              <span class="paso">03</span>
+              <h2 id="titulo-consulta-venta">Seguimiento de Ventas</h2>
+            </div>
+            <span id="contadorVentas" class="contador">0 ventas</span>
+          </div>
+
+          <form id="formBuscarVenta" class="fila-token" novalidate>
+            <input id="inputVentaId" type="number" min="1" placeholder="ID de venta (ej: 1)" />
+            <button id="btnBuscarVenta" type="submit" class="boton-secundario">Consultar GET /api/ventas/{id}</button>
+            <button id="btnListarVentas" type="button" class="boton-secundario">Ver Todas</button>
+          </form>
+
+          <div id="detalleVentaConsultada" class="resultado-venta oculto"></div>
+          <div id="listaVentas" class="vehiculos margen-superior"></div>
+        </section>
+
+        <!-- SECCIÓN 04: CATÁLOGO DE VEHÍCULOS -->
         <section class="panel listado" aria-labelledby="titulo-vehiculos">
           <div class="seccion-cabecera resultados">
-            <div class="titulo-bloque"><span class="paso">02</span><h2 id="titulo-vehiculos">Vehículos registrados</h2></div>
+            <div class="titulo-bloque">
+              <span class="paso">04</span>
+              <h2 id="titulo-vehiculos">Catálogo de Vehículos</h2>
+            </div>
             <span id="contador" class="contador">0 vehículos</span>
           </div>
           <div id="vehiculos" class="vehiculos">
-            <div class="vacio">No hay información todavía. Se debe realizar una consulta para mostrar vehículos.</div>
+            <div class="vacio">Inicie sesión para sincronizar el catálogo de vehículos y compradores.</div>
           </div>
         </section>
       </main>
-      <footer><span id="conexion">Comprobando conexión…</span> · Datos proporcionados por la API REST</footer>
+      <footer><span id="conexion">Comprobando conexión…</span> · Gateway NGINX (127.0.0.1:8090)</footer>
     </div>
   </body>
 </html>
